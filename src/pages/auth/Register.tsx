@@ -50,12 +50,7 @@ export default function Register() {
 
   const handleGoogleSignup = async () => {
     try {
-      const isMock = !(import.meta as any).env.VITE_SUPABASE_URL || (import.meta as any).env.VITE_SUPABASE_URL.includes('placeholder');
-      if (isMock) {
-        setUser({ id: 'cust_mock', email: 'customer@shreehari.com', name: 'Customer', role: 'customer', mobile: '' });
-        navigate('/');
-        return;
-      }
+
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

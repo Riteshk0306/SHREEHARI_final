@@ -127,14 +127,7 @@ export async function uploadProductImage(file: File): Promise<string> {
     format: 'image/webp'
   });
 
-  if (!isSupabaseConfigured()) {
-    // If in mock/demo mode, convert compressed image to Data URL
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(compressedFile);
-    });
-  }
+
 
   // Step 2: Upload compressed WebP to Supabase Storage
   const fileExt = compressedFile.name.split('.').pop() || 'webp';
@@ -151,12 +144,7 @@ export async function uploadProductImage(file: File): Promise<string> {
 
   if (uploadError) {
     console.error('Failed to upload compressed image to Supabase Storage:', uploadError);
-    // Fallback to Data URL if storage bucket fails
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(compressedFile);
-    });
+    throw uploadError;
   }
 
   // Step 3: Get and return Public CDN URL
@@ -178,13 +166,7 @@ export async function uploadProfileAvatar(file: File, userId: string): Promise<s
     format: 'image/webp'
   });
 
-  if (!isSupabaseConfigured()) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(compressedFile);
-    });
-  }
+
 
   const fileExt = compressedFile.name.split('.').pop() || 'webp';
   const filePath = `avatars/${userId}_${Date.now()}.${fileExt}`;
@@ -199,11 +181,7 @@ export async function uploadProfileAvatar(file: File, userId: string): Promise<s
 
   if (uploadError) {
     console.error('Failed to upload avatar to Supabase Storage:', uploadError);
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(compressedFile);
-    });
+    throw uploadError;
   }
 
   const { data } = supabase.storage

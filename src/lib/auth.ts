@@ -18,11 +18,6 @@ export async function verifyAdminRole(): Promise<boolean> {
       return false;
     }
 
-    if (!isSupabaseConfigured()) {
-      // In mock/demo mode, only allow known demo admin email
-      return session.user.email === 'admin@shreehari.com';
-    }
-
     // Step 2: Verify against the database profiles table (not just JWT claims)
     // This is a live server-side check — role changes take effect immediately.
     const { data: profile, error: profileError } = await supabase

@@ -47,13 +47,7 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     try {
-      const isMock = !(import.meta as any).env.VITE_SUPABASE_URL || (import.meta as any).env.VITE_SUPABASE_URL.includes('placeholder');
-      if (isMock) {
-        // Fallback for mock environment
-        setUser({ id: 'cust_mock', email: 'customer@shreehari.com', name: 'Customer', role: 'customer', mobile: '' });
-        navigate(searchParams.get('redirect') || '/');
-        return;
-      }
+
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -108,16 +102,7 @@ export default function Login() {
         }
       }
     } catch (err: any) {
-      // Fallback for demo/mock environment if Supabase fails
-      if (email === 'admin@shreehari.com' && password === 'admin123') {
-        setUser({ id: 'admin_mock', email: 'admin@shreehari.com', name: 'Admin', role: 'admin', mobile: '' });
-        navigate('/admin');
-        return;
-      } else if (email === 'customer@shreehari.com' && password === 'customer123') {
-        setUser({ id: 'cust_mock', email: 'customer@shreehari.com', name: 'Customer', role: 'customer', mobile: '' });
-        navigate(searchParams.get('redirect') || '/');
-        return;
-      }
+
       setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
@@ -161,13 +146,7 @@ export default function Login() {
           CONTINUE WITH GOOGLE
         </button>
 
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-xs font-medium text-blue-800">
-          <p className="font-bold mb-1 uppercase tracking-wider text-blue-900">Demo Login Details</p>
-          <div className="flex flex-col gap-1">
-            <p>Admin: <span className="font-bold">admin@shreehari.com</span> / <span className="font-bold">admin123</span></p>
-            <p>Customer: <span className="font-bold">customer@shreehari.com</span> / <span className="font-bold">customer123</span></p>
-          </div>
-        </div>
+
         <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-slate-200"></div>
