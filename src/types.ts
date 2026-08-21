@@ -58,6 +58,9 @@ export interface Order {
   dueAmount?: number;
   profit: number;
   source?: string;
+  gstIncluded?: boolean;
+  gstAmount?: number;
+  invoiceUrl?: string;
 }
 
 export interface CartItem {
@@ -80,6 +83,9 @@ export interface Bill {
   totalAmount: number;
   profit: number;
   source?: string;
+  gstIncluded?: boolean;
+  gstAmount?: number;
+  invoiceUrl?: string;
 }
 
 export interface DashboardStats {

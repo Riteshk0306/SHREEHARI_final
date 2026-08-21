@@ -1,12 +1,11 @@
 import { useStore } from '../../store';
 import { format } from 'date-fns';
-import { FileText, CheckCircle2, Plus, Minus, PlusCircle, Eye, Download } from 'lucide-react';
+import { FileText, CheckCircle2, Plus, Minus, PlusCircle, Eye, Download, MessageCircle } from 'lucide-react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { getLogoBase64 } from '../../utils/pdfHelper';
 import { api } from '../../api';
+import { generateInvoicePdfBlob, downloadInvoicePdf, viewInvoicePdf, sendInvoiceViaWhatsApp } from '../../utils/pdfGenerator';
+import { uploadInvoicePdf } from '../../lib/storage';
 
 export default function Checkout() {
   const { user, cart, clearCart, updateQuantity, removeFromCart } = useStore();
@@ -25,86 +24,6 @@ export default function Checkout() {
     }
   }, [user]);
 
-  
-  const handleDownloadInvoice = async (order: any, action: 'view' | 'download' = 'download') => {
-    try {
-      const doc = new jsPDF();
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(245, 158, 11);
-      doc.text("SHREE HARI", 35, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text("Premium Pooja Samagri", 35, 26);
-      
-      // Details
-      doc.setFontSize(12);
-      doc.setTextColor(50);
-      doc.text(`Billed To: ${order.customerName}`, 14, 40);
-      doc.text(`Mobile: ${order.mobile}`, 14, 46);
-      doc.text(`Address: ${order.address}`, 14, 52);
-      
-      doc.text(`Invoice: ${order.invoiceNumber}`, 140, 40);
-      doc.text(`Date: ${format(new Date(order.date), 'MMM dd, yyyy')}`, 140, 46);
-      
-      // Table
-      const tableColumn = ["#", "Item", "Quantity", "Price", "Total"];
-      const tableRows: any[] = [];
-      
-      order.items.forEach((item: any, index: number) => {
-        tableRows.push([
-          index + 1,
-          item.name,
-          item.quantity,
-          `Rs ${Number(item.sellingPrice || 0).toFixed(2)}`,
-          `Rs ${(Number(item.sellingPrice || 0) * Number(item.quantity || 0)).toFixed(2)}`
-        ]);
-      });
-      
-      autoTable(doc, {
-        startY: 60,
-        head: [tableColumn],
-        body: tableRows,
-        theme: 'striped',
-        headStyles: { fillColor: [245, 158, 11] }
-      });
-      
-      // Total
-      const finalY = (doc as any).lastAutoTable.finalY || 60;
-      doc.setFontSize(14);
-      doc.setTextColor(0);
-      doc.text(`Total Amount: Rs ${Number(order.totalAmount || 0).toFixed(2)}`, 140, finalY + 15);
-      
-      const fileName = `${order.customerName.trim().replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      if (action === 'view') {
-        window.open(doc.output('bloburl'), '_blank');
-      } else {
-        doc.save(fileName);
-      }
-    } catch(err) {
-      console.error(err);
-      // Fallback
-      window.print();
-    }
-  };
-
-
   if (!user) {
     return <Navigate to="/login?redirect=/checkout" />;
   }
@@ -121,18 +40,38 @@ export default function Checkout() {
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">Order Placed Successfully!</h1>
         <p className="text-slate-600 mb-2">Thank you for your purchase. Your order <span className="font-bold text-slate-900">{placedOrder.invoiceNumber}</span> is confirmed.</p>
-        <p className="text-sm text-slate-500 mb-10">An invoice has been generated and sent to WhatsApp number 7058117155.</p>
+        <p className="text-sm text-slate-500 mb-10">An official PDF invoice has been generated for your order.</p>
         
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <div className="flex gap-2 w-full sm:w-auto">
-            <button onClick={() => handleDownloadInvoice(placedOrder, 'view')} className="flex-1 sm:flex-none px-6 flex items-center justify-center bg-slate-900 text-white py-3.5 rounded-lg hover:bg-slate-800 transition-colors" title="View Invoice">
+            <button 
+              onClick={() => viewInvoicePdf(placedOrder)} 
+              className="flex-1 sm:flex-none px-6 flex items-center justify-center gap-2 bg-slate-100 text-slate-800 py-3.5 rounded-lg hover:bg-slate-200 transition-colors font-bold text-sm" 
+              title="View Invoice"
+            >
               <Eye className="w-5 h-5" />
+              View PDF
             </button>
-            <button onClick={() => handleDownloadInvoice(placedOrder, 'download')} className="flex-1 sm:flex-none px-6 flex items-center justify-center bg-slate-900 text-white py-3.5 rounded-lg hover:bg-slate-800 transition-colors" title="Download Invoice">
+            <button 
+              onClick={() => downloadInvoicePdf(placedOrder)} 
+              className="flex-1 sm:flex-none px-6 flex items-center justify-center gap-2 bg-slate-900 text-white py-3.5 rounded-lg hover:bg-slate-800 transition-colors font-bold text-sm" 
+              title="Download Invoice"
+            >
               <Download className="w-5 h-5" />
+              Download PDF
             </button>
           </div>
-          <button onClick={() => navigate('/my-orders')} className="w-full sm:w-auto bg-amber-500 text-white px-8 py-3.5 rounded-lg font-bold uppercase tracking-wider text-sm hover:bg-amber-600 transition-colors">
+          <button 
+            onClick={() => sendInvoiceViaWhatsApp(placedOrder, undefined, placedOrder.invoiceUrl)}
+            className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-3.5 rounded-lg font-bold uppercase tracking-wider text-xs hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Share to WhatsApp
+          </button>
+          <button 
+            onClick={() => navigate('/my-orders')} 
+            className="w-full sm:w-auto bg-amber-500 text-white px-8 py-3.5 rounded-lg font-bold uppercase tracking-wider text-xs hover:bg-amber-600 transition-colors"
+          >
             View My Orders
           </button>
         </div>
@@ -142,11 +81,7 @@ export default function Checkout() {
 
   const subtotal = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
   const totalProfit = cart.reduce((sum, item) => sum + ((item.sellingPrice - item.purchasePrice) * item.quantity), 0);
-  
   const total = subtotal;
-
-  
-  
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,29 +92,40 @@ export default function Checkout() {
         customerName: customerName,
         mobile: mobileNumber,
         email: user.email,
-        items: cart,
+        items: [...cart],
         address,
         paymentMethod,
-        paymentStatus: paymentMethod === 'Cash on Delivery' ? 'Pending' : 'Paid',
+        paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Paid',
         date: new Date().toISOString(),
         totalAmount: total,
-        profit: totalProfit
+        profit: totalProfit,
+        source: 'Customer'
       };
       
       const res = await api.post('/api/orders', order);
+      const invoiceNumber = res.invoiceNumber || `INV-${Date.now()}`;
       
-      
-      const message = `*New Order Placed!*\n\n*Name:* ${customerName}\n*Mobile:* ${mobileNumber}\n*Address:* ${address}\n*Payment:* ${paymentMethod}\n*Amount:* ₹${Number(total || 0).toFixed(2)}\n\n*Items:*\n${cart.map((item: any) => `- ${item.name} x${item.quantity}`).join('\n')}\n\n*Order ID:* ${res.invoiceNumber || 'Pending'}\n\n_Please find the attached invoice PDF._`;
-      
-      // Auto-generate and download PDF invoice is skipped here so it doesn't download automatically.
-      // The order is sent to the admin panel directly (via api.post)
-      // Simulate sending WhatsApp in the background without opening the app:
-      console.log('Simulating background WhatsApp message sent to admin:', message);
-      
-      
+      const completeOrder = {
+        ...order,
+        ...res,
+        id: res.id,
+        invoiceNumber
+      };
+
+      // Generate and upload PDF invoice to storage in background
+      try {
+        const pdfBlob = await generateInvoicePdfBlob(completeOrder);
+        const invoiceUrl = await uploadInvoicePdf(pdfBlob, invoiceNumber);
+        if (invoiceUrl && res.id) {
+          await api.put(`/api/orders/${res.id}`, { invoiceUrl });
+          completeOrder.invoiceUrl = invoiceUrl;
+        }
+      } catch (pdfErr) {
+        console.warn('PDF storage sync notice:', pdfErr);
+      }
 
       clearCart();
-      setPlacedOrder(res);
+      setPlacedOrder(completeOrder);
     } catch (err: any) {
       alert(err.message || 'Failed to place order');
     } finally {
@@ -319,5 +265,3 @@ export default function Checkout() {
     </div>
   );
 }
-
-// Appended logic for the placed order

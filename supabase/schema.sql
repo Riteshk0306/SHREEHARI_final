@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
   source TEXT DEFAULT 'Customer',
   "gstIncluded" BOOLEAN DEFAULT FALSE,
   "gstAmount" NUMERIC DEFAULT 0,
+  "invoiceUrl" TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -161,6 +162,9 @@ CREATE TABLE IF NOT EXISTS public.bills (
   "totalAmount" NUMERIC NOT NULL DEFAULT 0,
   profit NUMERIC NOT NULL DEFAULT 0,
   source TEXT DEFAULT 'Admin (POS)',
+  "gstIncluded" BOOLEAN DEFAULT FALSE,
+  "gstAmount" NUMERIC DEFAULT 0,
+  "invoiceUrl" TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -430,6 +434,27 @@ DROP POLICY IF EXISTS "Users can update profile avatar" ON storage.objects;
 CREATE POLICY "Users can update profile avatar"
   ON storage.objects FOR UPDATE
   USING (bucket_id = 'profile-avatars');
+
+-- Storage RLS: Invoices (Public Read, Admin / Users Upload)
+DROP POLICY IF EXISTS "Public Access Invoices" ON storage.objects;
+CREATE POLICY "Public Access Invoices"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins and Customers can upload invoices" ON storage.objects;
+CREATE POLICY "Admins and Customers can upload invoices"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins can update invoices" ON storage.objects;
+CREATE POLICY "Admins can update invoices"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins can delete invoices" ON storage.objects;
+CREATE POLICY "Admins can delete invoices"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'invoices');
 
 -- ==============================================================================
 -- 13. SEED INITIAL PRODUCTS DATA

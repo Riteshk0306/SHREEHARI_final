@@ -117,6 +117,36 @@ CREATE POLICY "Users can update profile avatar"
   ON storage.objects FOR UPDATE
   USING (bucket_id = 'profile-avatars');
 
+-- Invoices Storage Policies
+DROP POLICY IF EXISTS "Public Access Invoices" ON storage.objects;
+CREATE POLICY "Public Access Invoices"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins and Customers can upload invoices" ON storage.objects;
+CREATE POLICY "Admins and Customers can upload invoices"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins can update invoices" ON storage.objects;
+CREATE POLICY "Admins can update invoices"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Admins can delete invoices" ON storage.objects;
+CREATE POLICY "Admins can delete invoices"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'invoices');
+
+-- 4b. Column Migrations (Safe ADD COLUMN IF NOT EXISTS)
+ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS "invoiceUrl" TEXT;
+ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS "gstIncluded" BOOLEAN DEFAULT FALSE;
+ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS "gstAmount" NUMERIC DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.bills ADD COLUMN IF NOT EXISTS "invoiceUrl" TEXT;
+ALTER TABLE IF EXISTS public.bills ADD COLUMN IF NOT EXISTS "gstIncluded" BOOLEAN DEFAULT FALSE;
+ALTER TABLE IF EXISTS public.bills ADD COLUMN IF NOT EXISTS "gstAmount" NUMERIC DEFAULT 0;
+
 -- 5. Refresh Table RLS Policies
 DROP POLICY IF EXISTS "Users can view own profile or Admin can view all" ON public.profiles;
 CREATE POLICY "Users can view own profile or Admin can view all"

@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShoppingCart, Plus, Minus, User, FileText, CheckCircle2 } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, User, FileText, CheckCircle2, Eye, Download, MessageCircle, ArrowRight, X } from 'lucide-react';
 import { api } from '../../api';
 import type { Product } from '../../types';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { getLogoBase64 } from '../../utils/pdfHelper';
-import { format } from 'date-fns';
+import { generateInvoicePdfBlob, downloadInvoicePdf, viewInvoicePdf, sendInvoiceViaWhatsApp } from '../../utils/pdfGenerator';
+import { uploadInvoicePdf } from '../../lib/storage';
 
 export default function POS() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -16,6 +14,9 @@ export default function POS() {
   const [paidAmount, setPaidAmount] = useState<number | ''>('');
   const [includeGst, setIncludeGst] = useState(false);
   const [sendWhatsapp, setSendWhatsapp] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [lastCreatedOrder, setLastCreatedOrder] = useState<any>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -24,7 +25,7 @@ export default function POS() {
   const fetchProducts = async () => {
     try {
       const data = await api.get('/api/products');
-      setProducts(data);
+      setProducts(data || []);
     } catch (err) {
       console.error(err);
     }
@@ -35,7 +36,7 @@ export default function POS() {
     p.category.toLowerCase().includes(search.toLowerCase())
   );
 
-    const addToCart = (p: Product) => {
+  const addToCart = (p: Product) => {
     setCart(prev => {
       const existing = prev.find(item => item.productId === p.id);
       const reqQty = existing ? existing.quantity + 1 : 1;
@@ -62,121 +63,34 @@ export default function POS() {
     else setCart(prev => prev.map(item => item.productId === id ? { ...item, quantity: q } : item));
   };
 
-  const handleDownloadInvoice = async (bill: any) => {
-    try {
-      const doc = new jsPDF();
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(245, 158, 11);
-      doc.text("SHREE HARI", 35, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text("Premium Pooja Samagri", 35, 28);
-      
-      // Invoice Details
-      doc.setFontSize(14);
-      doc.setTextColor(15);
-      doc.text("INVOICE", 14, 45);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(50);
-      doc.text(`Bill No: ${bill.billNumber || 'PENDING'}`, 14, 55);
-      doc.text(`Date: ${new Date(bill.date).toLocaleDateString()}`, 14, 62);
-      
-      // Customer Details
-      doc.text("Bill To:", 120, 45);
-      doc.setTextColor(15);
-      doc.text(bill.customerName, 120, 55);
-      doc.setTextColor(50);
-      doc.text(`Mobile: ${bill.mobile}`, 120, 62);
-      
-      // Table Header
-      let y = 80;
-      doc.setFillColor(245, 247, 250);
-      doc.rect(14, y - 6, 182, 10, 'F');
-      
-      doc.setFontSize(10);
-      doc.setTextColor(15);
-      doc.setFont("helvetica", "bold");
-      doc.text("#", 16, y);
-      doc.text("Item", 25, y);
-      doc.text("Qty", 120, y);
-      doc.text("Price", 140, y);
-      doc.text("Amount", 170, y);
-      
-      doc.setFont("helvetica", "normal");
-      y += 10;
-      
-      // Items
-      cart.forEach((item, index) => {
-        doc.text((index + 1).toString(), 16, y);
-        doc.text(item.name.substring(0, 35), 25, y);
-        doc.text(item.quantity.toString(), 120, y);
-        doc.text(`Rs. ${item.sellingPrice}`, 140, y);
-        doc.text(`Rs. ${item.sellingPrice * item.quantity}`, 170, y);
-        y += 10;
-      });
-      
-      // Footer/Totals
-      y += 5;
-      doc.line(14, y, 196, y);
-      y += 10;
-      
-      const subtotal = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
-      doc.text("Subtotal:", 140, y);
-      doc.text(`Rs. ${Number(subtotal || 0).toFixed(2)}`, 170, y);
-      
-      if (includeGst) {
-        y += 10;
-        doc.text("GST (18%):", 140, y);
-        doc.text(`Rs. ${(Number(subtotal || 0) * 0.18).toFixed(2)}`, 170, y);
-      }
-      
-      y += 10;
-      doc.setFont("helvetica", "bold");
-      doc.text("Total:", 140, y);
-      doc.text(`Rs. ${Number(bill.totalAmount || 0).toFixed(2)}`, 170, y);
-      
-      doc.save(`Invoice_${bill.billNumber || Date.now()}.pdf`);
-    } catch (err) {
-      console.error("Failed to generate PDF", err);
-    }
-  };
-
   const subtotal = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
   const totalProfit = cart.reduce((sum, item) => sum + ((item.sellingPrice - item.purchasePrice) * item.quantity), 0);
   const gst = includeGst ? (subtotal * 0.18) : 0;
   const total = subtotal + gst;
 
   const handleGenerateBill = async () => {
-    if (cart.length === 0) return alert('Cart is empty');
-    if (!customerInfo.name || !customerInfo.mobile) return alert('Enter customer details');
-    
+    if (cart.length === 0) return alert('Cart is empty. Please select products first.');
+    if (!customerInfo.name.trim() || !customerInfo.mobile.trim()) {
+      return alert('Please enter customer Name and Mobile Number.');
+    }
+
+    setIsGenerating(true);
+
     try {
-      const res = await api.post('/api/orders', {
-        customerName: customerInfo.name,
-        mobile: customerInfo.mobile,
+      const actualPaid = paidAmount === '' ? total : Number(paidAmount);
+      const calculatedPaymentStatus = actualPaid >= total ? 'Paid' : (actualPaid > 0 ? 'Pending' : 'Pending');
+      const dueAmount = Math.max(0, total - actualPaid);
+
+      // 1. Create order in Database
+      const orderPayload = {
+        customerName: customerInfo.name.trim(),
+        mobile: customerInfo.mobile.trim(),
         address: 'In-Store',
-        items: cart,
+        items: [...cart],
         paymentMethod,
-        paidAmount: paidAmount === '' ? total : paidAmount,
-        paymentStatus: (paidAmount === '' || paidAmount >= total) ? 'Paid' : 'Pending',
+        paidAmount: actualPaid,
+        dueAmount,
+        paymentStatus: calculatedPaymentStatus,
         date: new Date().toISOString(),
         totalAmount: total,
         profit: totalProfit,
@@ -184,33 +98,64 @@ export default function POS() {
         gstAmount: gst,
         source: 'Admin (POS)',
         orderStatus: 'Completed'
-      });
-      
-      // Removed auto-download PDF
+      };
 
-      let msg = "Bill generated successfully!";
-      
-      if (sendWhatsapp) {
-        const message = `*New Bill Generated!*\n\n*Name:* ${customerInfo.name}\n*Amount:* ₹${Number(total || 0).toFixed(2)}\n\n*Items:*\n${cart.map((item: any) => `- ${item.name} x${item.quantity}`).join('\n')}\n\n*Bill ID:* ${res.billNumber || 'Pending'}\n\n_Thank you for shopping with Shree Hari. Your invoice PDF will be shared shortly._`;
-        const whatsappUrl = `https://wa.me/91${customerInfo.mobile}?text=${encodeURIComponent(message)}`;
-        // Open whatsapp in new tab
-        window.open(whatsappUrl, '_blank');
-        msg += " WhatsApp opened.";
+      const res = await api.post('/api/orders', orderPayload);
+      const invoiceNumber = res.invoiceNumber || res.billNumber || `INV-${Date.now()}`;
+
+      // Complete order model
+      const completedOrder = {
+        ...orderPayload,
+        ...res,
+        id: res.id,
+        invoiceNumber
+      };
+
+      // 2. Generate standard PDF Blob
+      const pdfBlob = await generateInvoicePdfBlob(completedOrder);
+
+      // 3. Upload PDF to Supabase Storage (invoices bucket)
+      let invoiceUrl = '';
+      try {
+        invoiceUrl = await uploadInvoicePdf(pdfBlob, invoiceNumber);
+        if (invoiceUrl && res.id) {
+          // 4. Sync invoiceUrl to Database
+          await api.put(`/api/orders/${res.id}`, { invoiceUrl });
+          completedOrder.invoiceUrl = invoiceUrl;
+        }
+      } catch (uploadError) {
+        console.warn('Could not sync invoice to cloud storage, continuing:', uploadError);
       }
 
-      alert(msg);
-      
+      // 5. Send via WhatsApp if requested
+      if (sendWhatsapp) {
+        await sendInvoiceViaWhatsApp(completedOrder, pdfBlob, invoiceUrl);
+      } else {
+        // Automatically download PDF for admin record
+        await downloadInvoicePdf(completedOrder);
+      }
+
+      setLastCreatedOrder(completedOrder);
+      setShowSuccessModal(true);
+
+      // Reset form
       setCart([]);
       setCustomerInfo({ name: '', mobile: '' });
       setPaidAmount('');
       setIncludeGst(false);
-    } catch(e) {
-      alert('Error generating bill');
+
+      // Re-fetch products to reflect updated stock count
+      fetchProducts();
+    } catch (e: any) {
+      console.error('Error generating bill:', e);
+      alert('Error generating bill: ' + (e.message || 'Unknown error'));
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-6rem)]">
+    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-6rem)] relative">
       {/* Products Section */}
       <div className="flex-1 flex flex-col min-h-[500px] bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50">
@@ -314,13 +259,13 @@ export default function POS() {
               </label>
             </div>
 
-            <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
-              <label className="font-medium text-slate-700 flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={sendWhatsapp} onChange={e => setSendWhatsapp(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
-                Send Invoice via WhatsApp
+            <div className="flex items-center justify-between bg-emerald-50/50 p-3 rounded-lg border border-emerald-200">
+              <label className="font-bold text-emerald-900 flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={sendWhatsapp} onChange={e => setSendWhatsapp(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" />
+                <MessageCircle className="w-4 h-4 text-emerald-600" />
+                Send Invoice PDF via WhatsApp
               </label>
             </div>
-            
             
             <div className="pt-2">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Amount Paid Today (₹)</label>
@@ -336,11 +281,102 @@ export default function POS() {
               ))}
             </div>
           </div>
-          <button onClick={handleGenerateBill} disabled={cart.length === 0} className="w-full bg-slate-900 text-white py-3.5 rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 mt-4 tracking-wide uppercase text-xs">
-            Confirm Bill
+          <button 
+            onClick={handleGenerateBill} 
+            disabled={cart.length === 0 || isGenerating} 
+            className="w-full bg-slate-900 text-white py-3.5 rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 mt-4 tracking-wide uppercase text-xs flex items-center justify-center gap-2"
+          >
+            {isGenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Generating & Syncing Invoice...
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" />
+                Confirm Bill & Generate PDF
+              </>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Bill Confirmation & PDF Invoice Success Modal */}
+      {showSuccessModal && lastCreatedOrder && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-900 mb-1">Bill Generated Successfully!</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Invoice <span className="font-bold text-slate-800">{lastCreatedOrder.invoiceNumber}</span> is saved and synced to database.
+            </p>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2 text-sm mb-6">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Customer:</span>
+                <span className="font-bold text-slate-900">{lastCreatedOrder.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mobile:</span>
+                <span className="font-medium text-slate-700">{lastCreatedOrder.mobile}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Amount:</span>
+                <span className="font-bold text-emerald-600">₹{Number(lastCreatedOrder.totalAmount || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Payment:</span>
+                <span className="font-medium text-slate-700">{lastCreatedOrder.paymentMethod} ({lastCreatedOrder.paymentStatus})</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button 
+                onClick={() => sendInvoiceViaWhatsApp(lastCreatedOrder, undefined, lastCreatedOrder.invoiceUrl)}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Send / Re-send to WhatsApp
+              </button>
+
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => viewInvoicePdf(lastCreatedOrder)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Invoice PDF
+                </button>
+                <button 
+                  onClick={() => downloadInvoicePdf(lastCreatedOrder)}
+                  className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Download PDF
+                </button>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full mt-4 text-center text-xs font-semibold text-slate-400 hover:text-slate-600 py-1"
+            >
+              Close and Start New Bill
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -190,3 +190,42 @@ export async function uploadProfileAvatar(file: File, userId: string): Promise<s
 
   return data.publicUrl;
 }
+
+/**
+ * Uploads an invoice PDF Blob to Supabase Storage in the 'invoices' bucket
+ * and returns the public CDN URL.
+ */
+export async function uploadInvoicePdf(pdfBlob: Blob, invoiceNumber: string): Promise<string> {
+  const cleanNumber = (invoiceNumber || `INV_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = `invoices/Invoice_${cleanNumber}.pdf`;
+
+  if (!isSupabaseConfigured()) {
+    console.log('[Storage] Supabase not configured; returning local blob URL for invoice PDF.');
+    return URL.createObjectURL(pdfBlob);
+  }
+
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('invoices')
+      .upload(filePath, pdfBlob, {
+        cacheControl: '31536000',
+        upsert: true,
+        contentType: 'application/pdf'
+      });
+
+    if (uploadError) {
+      console.warn('Failed to upload invoice to Supabase Storage, using fallback:', uploadError);
+      return URL.createObjectURL(pdfBlob);
+    }
+
+    const { data } = supabase.storage
+      .from('invoices')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  } catch (err) {
+    console.error('Error uploading invoice PDF:', err);
+    return URL.createObjectURL(pdfBlob);
+  }
+}
+

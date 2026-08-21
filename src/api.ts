@@ -3,7 +3,11 @@ import { Product, Customer, Order, Bill, User } from './types';
 
 export const api = {
   get: async (url: string): Promise<any> => {
-    if (!isSupabaseConfigured()) throw new Error("Supabase not configured");
+    if (!isSupabaseConfigured()) {
+      const res = await fetch(url, { credentials: 'omit' });
+      if (!res.ok) throw new Error(`HTTP error ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
 
     if (url === '/api/customers') {
       const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
@@ -75,7 +79,15 @@ export const api = {
   },
 
   post: async (url: string, data: any): Promise<any> => {
-    if (!isSupabaseConfigured()) throw new Error("Supabase not configured");
+    if (!isSupabaseConfigured()) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error(`HTTP error ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
 
     if (url === '/api/contacts') {
       const contactData = { ...data, date: data.date || new Date().toISOString() };
@@ -180,7 +192,15 @@ export const api = {
   },
 
   put: async (url: string, data: any): Promise<any> => {
-    if (!isSupabaseConfigured()) throw new Error("Supabase not configured");
+    if (!isSupabaseConfigured()) {
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error(`HTTP error ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
 
     if (url.startsWith('/api/products/')) {
       const id = url.split('/').pop();
@@ -214,7 +234,11 @@ export const api = {
   },
 
   delete: async (url: string): Promise<any> => {
-    if (!isSupabaseConfigured()) throw new Error("Supabase not configured");
+    if (!isSupabaseConfigured()) {
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP error ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
 
     if (url.startsWith('/api/products/')) {
       const id = url.split('/').pop();

@@ -3,11 +3,9 @@ import { useStore } from '../../store';
 import { Navigate, Link } from 'react-router-dom';
 import { api } from '../../api';
 import { format } from 'date-fns';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { getLogoBase64 } from '../../utils/pdfHelper';
 import { FileText, Package, Mail, MapPin, Phone, Eye, Download } from 'lucide-react';
 import { Order } from '../../types';
+import { downloadInvoicePdf, viewInvoicePdf } from '../../utils/pdfGenerator';
 
 export default function MyOrders() {
   const { user } = useStore();
@@ -25,90 +23,13 @@ export default function MyOrders() {
   const fetchOrders = async () => {
     try {
       const data = await api.get('/api/orders');
-      const myOrders = data.filter((o: Order) => o.customerId === user.id);
+      const myOrders = (data || []).filter((o: Order) => o.customerId === user.id);
       myOrders.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setOrders(myOrders);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDownloadInvoice = async (order: Order, action: 'view' | 'download' = 'download') => {
-    try {
-      const doc = new jsPDF();
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(245, 158, 11);
-      doc.text("SHREE HARI", 35, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text("Premium Pooja Samagri", 35, 26);
-      
-      // Details
-      doc.setFontSize(12);
-      doc.setTextColor(50);
-      doc.text(`Billed To: ${order.customerName}`, 14, 40);
-      doc.text(`Mobile: ${order.mobile}`, 14, 46);
-      doc.text(`Address: ${order.address || 'In-Store'}`, 14, 52);
-      
-      doc.text(`Invoice: ${order.invoiceNumber || 'PENDING'}`, 140, 40);
-      doc.text(`Date: ${format(new Date(order.date), 'MMM dd, yyyy')}`, 140, 46);
-      
-      // Table
-      const tableColumn = ["#", "Item", "Quantity", "Price", "Total"];
-      const tableRows: any[] = [];
-      
-      order.items.forEach((item: any, index: number) => {
-        tableRows.push([
-          index + 1,
-          item.name,
-          item.quantity,
-          `Rs ${Number(item.sellingPrice || 0).toFixed(2)}`,
-          `Rs ${(Number(item.sellingPrice || 0) * Number(item.quantity || 0)).toFixed(2)}`
-        ]);
-      });
-      
-      autoTable(doc, {
-        startY: 60,
-        head: [tableColumn],
-        body: tableRows,
-        theme: 'striped',
-        headStyles: { fillColor: [245, 158, 11] }
-      });
-      
-      // Total
-      const finalY = (doc as any).lastAutoTable.finalY || 60;
-      doc.setFontSize(14);
-      doc.setTextColor(0);
-      doc.text(`Total Amount: Rs ${Number(order.totalAmount || 0).toFixed(2)}`, 140, finalY + 15);
-      
-      const fileName = `Invoice_${order.invoiceNumber || Date.now()}.pdf`;
-      if (action === 'view') {
-        window.open(doc.output('bloburl'), '_blank');
-      } else {
-        doc.save(fileName);
-      }
-    } catch(err) {
-      console.error(err);
-      alert("Failed to generate PDF");
     }
   };
 
@@ -193,18 +114,20 @@ export default function MyOrders() {
                 <div className="md:w-48 flex flex-col gap-3 md:border-l border-slate-200 md:pl-6 justify-end">
                   <div className="flex gap-2 w-full">
                     <button 
-                      onClick={() => handleDownloadInvoice(order, 'view')}
-                      className="flex-1 flex items-center justify-center bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
-                      title="View Invoice"
+                      onClick={() => viewInvoicePdf(order)}
+                      className="flex-1 flex items-center justify-center bg-slate-100 text-slate-700 py-3 rounded-lg hover:bg-slate-200 transition-colors shadow-sm text-xs font-bold gap-1"
+                      title="View Invoice PDF"
                     >
-                      <Eye className="w-5 h-5" />
+                      <Eye className="w-4 h-4" />
+                      View
                     </button>
                     <button 
-                      onClick={() => handleDownloadInvoice(order, 'download')}
-                      className="flex-1 flex items-center justify-center bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
-                      title="Download Invoice"
+                      onClick={() => downloadInvoicePdf(order)}
+                      className="flex-1 flex items-center justify-center bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 transition-colors shadow-sm text-xs font-bold gap-1"
+                      title="Download Invoice PDF"
                     >
-                      <Download className="w-5 h-5" />
+                      <Download className="w-4 h-4" />
+                      Download
                     </button>
                   </div>
                 </div>

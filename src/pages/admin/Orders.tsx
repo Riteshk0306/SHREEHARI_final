@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { Order } from '../../types';
-import { FileText, Search, MapPin, Eye, Download, Trash2 } from 'lucide-react';
+import { Search, MapPin, Eye, Download, Trash2, MessageCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { getLogoBase64 } from '../../utils/pdfHelper';
+import { downloadInvoicePdf, viewInvoicePdf, sendInvoiceViaWhatsApp } from '../../utils/pdfGenerator';
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -25,8 +23,7 @@ export default function AdminOrders() {
     fetchOrders();
   };
 
-  
-    const handleDeleteOrder = async (id: string) => {
+  const handleDeleteOrder = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this order?")) {
       try {
         await api.delete('/api/orders/' + id);
@@ -37,86 +34,19 @@ export default function AdminOrders() {
     }
   };
 
-  const handleDownloadInvoice = async (order: Order, action: 'view' | 'download' = 'download') => {
+  const handleWhatsAppShare = async (order: Order) => {
     try {
-      const doc = new jsPDF();
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      try {
-        const logoData = await getLogoBase64();
-        doc.addImage(logoData, 'PNG', 14, 10, 16, 16);
-      } catch (err) {
-        console.warn('Failed to load logo', err);
-      }
-      
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(245, 158, 11);
-      doc.text("SHREE HARI", 35, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text("Premium Pooja Samagri", 35, 26);
-      
-      // Details
-      doc.setFontSize(12);
-      doc.setTextColor(50);
-      doc.text(`Billed To: ${order.customerName}`, 14, 40);
-      doc.text(`Mobile: ${order.mobile}`, 14, 46);
-      doc.text(`Address: ${order.address || 'In-Store'}`, 14, 52);
-      
-      doc.text(`Invoice: ${order.invoiceNumber || 'PENDING'}`, 140, 40);
-      doc.text(`Date: ${format(new Date(order.date), 'MMM dd, yyyy')}`, 140, 46);
-      
-      // Table
-      const tableColumn = ["#", "Item", "Quantity", "Price", "Total"];
-      const tableRows: any[] = [];
-      
-      order.items.forEach((item: any, index: number) => {
-        tableRows.push([
-          index + 1,
-          item.name,
-          item.quantity,
-          `Rs ${Number(item.sellingPrice || 0).toFixed(2)}`,
-          `Rs ${(Number(item.sellingPrice || 0) * Number(item.quantity || 0)).toFixed(2)}`
-        ]);
-      });
-      
-      autoTable(doc, {
-        startY: 60,
-        head: [tableColumn],
-        body: tableRows,
-        theme: 'striped',
-        headStyles: { fillColor: [245, 158, 11] }
-      });
-      
-      // Total
-      const finalY = (doc as any).lastAutoTable.finalY || 60;
-      doc.setFontSize(14);
-      doc.setTextColor(0);
-      doc.text(`Total Amount: Rs ${Number(order.totalAmount || 0).toFixed(2)}`, 140, finalY + 15);
-      
-      const fileName = `Invoice_${order.invoiceNumber || Date.now()}.pdf`;
-      if (action === 'view') {
-        window.open(doc.output('bloburl'), '_blank');
-      } else {
-        doc.save(fileName);
-      }
-    } catch(err) {
-      console.error(err);
-      alert("Failed to generate PDF");
+      await sendInvoiceViaWhatsApp(order, undefined, order.invoiceUrl);
+    } catch (err) {
+      console.error('Failed to share invoice via WhatsApp:', err);
+      alert('Could not open WhatsApp for invoice sharing.');
     }
   };
 
   const filtered = orders.filter(o => 
-    o.invoiceNumber.toLowerCase().includes(search.toLowerCase()) || 
-    o.customerName.toLowerCase().includes(search.toLowerCase())
+    (o.invoiceNumber || '').toLowerCase().includes(search.toLowerCase()) || 
+    (o.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
+    (o.mobile || '').includes(search)
   );
 
   return (
@@ -158,8 +88,8 @@ export default function AdminOrders() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg">
                 <div>
                   <p className="text-sm font-bold text-slate-900">{order.customerName}</p>
-                  <p className="text-sm text-slate-600">{order.mobile}</p>
-                  <p className="text-sm text-slate-600">{order.email}</p>
+                  <p className="text-sm text-slate-600">Mobile: {order.mobile}</p>
+                  {order.email && <p className="text-sm text-slate-600">Email: {order.email}</p>}
                 </div>
                 <div className="flex items-start gap-2 text-sm text-slate-600 font-medium">
                   <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
@@ -200,22 +130,48 @@ export default function AdminOrders() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Payment Method</label>
-                <div className="text-sm font-bold text-slate-900 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">{order.paymentMethod}</div>
+                <div className="text-sm font-bold text-slate-900 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                  {order.paymentMethod} ({order.paymentStatus})
+                </div>
               </div>
               
-              
-              <div className="mt-auto flex gap-2">
-                {order.orderStatus === 'Completed' && (
-                  <button onClick={() => handleDeleteOrder(order.id)} className="flex items-center justify-center bg-red-50 text-red-600 px-3 py-2.5 rounded-lg hover:bg-red-100 transition-colors border border-red-200" title="Delete Order">
-                    <Trash2 className="w-5 h-5" />
+              <div className="mt-auto space-y-2 pt-2">
+                <button 
+                  onClick={() => handleWhatsAppShare(order)}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 transition-colors font-bold text-xs"
+                  title="Send Invoice to WhatsApp"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Send WhatsApp Invoice
+                </button>
+
+                <div className="flex gap-2">
+                  {order.orderStatus === 'Completed' && (
+                    <button 
+                      onClick={() => handleDeleteOrder(order.id)} 
+                      className="flex items-center justify-center bg-red-50 text-red-600 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors border border-red-200" 
+                      title="Delete Order"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => viewInvoicePdf(order)} 
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-slate-100 text-slate-700 py-2 rounded-lg hover:bg-slate-200 transition-colors border border-slate-200 text-xs font-medium" 
+                    title="View Invoice PDF"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View PDF
                   </button>
-                )}
-                <button onClick={() => handleDownloadInvoice(order, 'view')} className="flex-1 flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-lg hover:bg-slate-200 transition-colors border border-slate-200" title="View Invoice">
-                  <Eye className="w-5 h-5" />
-                </button>
-                <button onClick={() => handleDownloadInvoice(order, 'download')} className="flex-1 flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-lg hover:bg-slate-200 transition-colors border border-slate-200" title="Download Invoice">
-                  <Download className="w-5 h-5" />
-                </button>
+                  <button 
+                    onClick={() => downloadInvoicePdf(order)} 
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-slate-900 text-white py-2 rounded-lg hover:bg-slate-800 transition-colors border border-slate-900 text-xs font-medium" 
+                    title="Download Invoice PDF"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </div>
               </div>
 
             </div>
